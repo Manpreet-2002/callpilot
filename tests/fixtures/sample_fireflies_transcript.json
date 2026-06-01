@@ -1,0 +1,71 @@
+{
+  "data": {
+    "transcripts": [
+      {
+        "id": "meet_abc123",
+        "title": "Q2 Review with Acme Corp",
+        "date": "2026-06-02T14:00:00Z",
+        "duration": 2700,
+        "participants": [
+          { "displayName": "Alice Chen", "email": "alice@acme.com" },
+          { "displayName": "Priya Sharma", "email": "priya@startup.com" }
+        ],
+        "summary": {
+          "action_items": [],
+          "overview": "Customer reported login intermittently failing on Safari. Also requested CSV export for reports."
+        },
+        "sentences": [
+          {
+            "index": 0,
+            "speaker_name": "Alice Chen",
+            "text": "Thanks for jumping on. We've been using the platform for a few months now and overall it's been great.",
+            "start_time": 10.0
+          },
+          {
+            "index": 1,
+            "speaker_name": "Alice Chen",
+            "text": "So the main issue we keep hitting is that users are getting logged out randomly, especially on Safari. It happens maybe twice a week.",
+            "start_time": 45.2
+          },
+          {
+            "index": 2,
+            "speaker_name": "Priya Sharma",
+            "text": "Got it, that sounds frustrating. Can you tell me more about when it happens?",
+            "start_time": 58.0
+          },
+          {
+            "index": 3,
+            "speaker_name": "Alice Chen",
+            "text": "It seems random — they're just in the middle of working and get kicked back to the login page.",
+            "start_time": 68.5
+          },
+          {
+            "index": 4,
+            "speaker_name": "Priya Sharma",
+            "text": "Understood, I'll flag that to the team right away.",
+            "start_time": 80.0
+          },
+          {
+            "index": 5,
+            "speaker_name": "Alice Chen",
+            "text": "Also, it would be nice if we could export our reports as CSV, not just PDF. Our finance team needs to pull the numbers into Excel.",
+            "start_time": 310.5
+          },
+          {
+            "index": 6,
+            "speaker_name": "Priya Sharma",
+            "text": "That's a reasonable ask, I'll put that on the roadmap.",
+            "start_time": 330.0
+          },
+          {
+            "index": 7,
+            "speaker_name": "Alice Chen",
+            "text": "Great, looking forward to it. Overall we're happy with the product.",
+            "start_time": 345.0
+          }
+        ],
+        "transcript_url": "https://fireflies.ai/view/meet_abc123"
+      }
+    ]
+  }
+}

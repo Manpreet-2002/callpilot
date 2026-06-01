@@ -1,0 +1,71 @@
+{
+  "data": {
+    "transcripts": [
+      {
+        "id": "meet_def456",
+        "title": "Monthly Check-in with Beta Corp",
+        "date": "2026-06-02T16:00:00Z",
+        "duration": 3600,
+        "participants": [
+          { "displayName": "Bob Martinez", "email": "bob@betacorp.com" },
+          { "displayName": "Sam Lee", "email": "sam@startup.com" }
+        ],
+        "summary": {
+          "action_items": [],
+          "overview": "Dashboard broken since last deploy. Search needs date/status filters. Mobile app requested for field team."
+        },
+        "sentences": [
+          {
+            "index": 0,
+            "speaker_name": "Bob Martinez",
+            "text": "Hey Sam, thanks for the time. I want to get right into some issues we've been dealing with.",
+            "start_time": 10.0
+          },
+          {
+            "index": 1,
+            "speaker_name": "Bob Martinez",
+            "text": "The dashboard is completely broken for us right now — the charts don't load at all since your last deploy on Friday. Our ops team is flying blind.",
+            "start_time": 30.0
+          },
+          {
+            "index": 2,
+            "speaker_name": "Sam Lee",
+            "text": "Oh no, I'm sorry to hear that. I'll escalate that immediately after this call.",
+            "start_time": 55.0
+          },
+          {
+            "index": 3,
+            "speaker_name": "Bob Martinez",
+            "text": "Please do, it's pretty urgent. Also separately — the search filter could be a lot better. Right now it only searches by name but we need to filter by date range and status too. It would save our team a lot of time.",
+            "start_time": 450.0
+          },
+          {
+            "index": 4,
+            "speaker_name": "Sam Lee",
+            "text": "Makes sense, we've heard that from a few customers. I'll add it to the backlog.",
+            "start_time": 480.0
+          },
+          {
+            "index": 5,
+            "speaker_name": "Bob Martinez",
+            "text": "And one more thing — this is more of a longer-term ask — but we'd love a mobile app at some point. Our field team can't use the web app effectively on their phones. They're out on-site all day.",
+            "start_time": 1800.0
+          },
+          {
+            "index": 6,
+            "speaker_name": "Sam Lee",
+            "text": "A mobile app is definitely something we've been thinking about. I'll note that as a feature request.",
+            "start_time": 1840.0
+          },
+          {
+            "index": 7,
+            "speaker_name": "Bob Martinez",
+            "text": "That would be great. Overall the platform has been valuable, we just want these rough edges smoothed out.",
+            "start_time": 1860.0
+          }
+        ],
+        "transcript_url": "https://fireflies.ai/view/meet_def456"
+      }
+    ]
+  }
+}
