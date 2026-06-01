@@ -271,7 +271,7 @@ Your job:
 
 2. For each item, output:
    - type: [bug | feature_enhancement | new_feature]
-   - complexity: [simple | complex]
+   - preliminary_complexity: [simple | complex]
    - title: 5–10 words, imperative tense ("Fix session expiry on Safari", not "Session expiry issue")
    - description: 2–3 sentences — what the problem is, why it matters to the client
    - client_quote: verbatim sentence(s) that best capture the item
@@ -284,16 +284,20 @@ Classification rules:
   feature_enhancement → existing feature needs extension, more flexibility, or improved UX
   new_feature      → does not exist yet, would need to be built from scratch
 
-Complexity rules:
-  simple  → clearly scoped, 1–3 files, no cross-service coordination, could ship in a day
-  complex → ambiguous scope, multiple services, design decisions required, or needs clarification first
+Preliminary complexity rules (text-based guess only — will be verified against the codebase):
+  simple  → description sounds clearly scoped, a single focused area, likely 1–3 files
+  complex → description sounds broad, cross-cutting, ambiguous, or requires design decisions
+
+NOTE: `preliminary_complexity` is a first-pass estimate from the text. The Codebase Assessment
+step will read the actual repo and set `final_complexity` before any routing or action decisions
+are made. Never use `preliminary_complexity` for routing — always wait for `final_complexity`.
 
 Return ONLY valid JSON. No prose, no markdown fences.
 
 [
   {
     "type": "bug",
-    "complexity": "simple",
+    "preliminary_complexity": "simple",
     "urgency": "high",
     "title": "Fix random session expiry on Safari",
     "description": "Users are being logged out unexpectedly on Safari approximately twice per week mid-session. The pattern suggests a cookie or session token issue specific to Safari's storage behavior.",
@@ -309,7 +313,49 @@ Return ONLY valid JSON. No prose, no markdown fences.
 **After extraction:**
 - Empty array: log `No actionable items found in: <title>` and skip
 - Invalid JSON: log parse error, do NOT mark as processed (retry next run)
-- Sort items by urgency: high → medium → low before routing
+- Sort items by urgency: high → medium → low before codebase assessment
+
+---
+
+## Codebase Assessment
+
+Run this step for **every extracted item**, before routing. This reads the actual code to
+determine `final_complexity` — replacing the text-based `preliminary_complexity` guess.
+
+**When GitHub MCP is connected:**
+
+For each item:
+
+1. Identify the best-matching repo from config teams using `routing_hint` (pick the team whose
+   description best matches, then take their first repo).
+2. Use GitHub MCP to explore the repo:
+   - List the top-level directory
+   - List `src/`, `app/`, `lib/`, or equivalent source root if present
+   - Read 2–3 files most likely relevant to the item based on `routing_hint` and `description`
+     (e.g. for a video crash bug, look for `video`, `player`, `route` files)
+3. Based on what you read, answer:
+   - How many files realistically need to change to address this?
+   - Is the scope clear and contained, or does it span multiple areas?
+   - Does the fix require architectural decisions, or is the path obvious from reading the code?
+   - Are there related abstractions (hooks, services, middleware) that make this more involved?
+4. Set `final_complexity`:
+   - `simple` — 1–3 files, fix path is clear after reading the code, no design decisions needed
+   - `complex` — 4+ files, or scope is still ambiguous after reading, or requires design decisions
+5. If `preliminary_complexity` ≠ `final_complexity`, log the change with a reason:
+   ```
+   ↑ Upgraded "Fix video crash" preliminary=simple → final=complex
+     Reason: VideoPlayer.tsx imports from 4 services (audioEngine, lessonState, progressTracker,
+     routeGuard) — a crash here likely requires coordinated changes across all of them.
+   ```
+   Store this reason as `complexity_note` on the item for use in PR/Issue body.
+
+**When GitHub MCP is NOT connected:**
+
+- Set `final_complexity = preliminary_complexity` (keep text-based guess)
+- Set `complexity_note = "⚠️ GitHub MCP not connected — complexity not verified against codebase"`
+- Log: `⚠️ Skipping codebase assessment — GitHub MCP unavailable. Using text-based complexity guess.`
+
+**All routing and action decisions use `final_complexity`. Never use `preliminary_complexity` downstream.**
 
 ---
 
@@ -323,10 +369,10 @@ For each item:
 4. If top score ≥ `routing.confidence_threshold`: route to that team
 5. If top score < threshold: use fallback strategy
 
-Log routing decision before acting:
+Log routing decision before acting (include both complexity values when they differ):
 ```
-→ "Fix session expiry on Safari" → auth (confidence: 0.91) [HIGH urgency]
-→ "Export reports as CSV" → data (confidence: 0.84) [MEDIUM urgency]
+→ "Fix session expiry on Safari" → auth (confidence: 0.91) [HIGH] [simple→simple]
+→ "Fix video crash on direct open" → music-teacher (confidence: 0.88) [HIGH] [simple→complex ↑]
 → "Mobile app for field team" → new_feature → backlog (confidence: 0.79)
 ```
 
@@ -334,8 +380,10 @@ Log routing decision before acting:
 
 ## Action Matrix
 
-| type | complexity | slack available? | action |
-|------|------------|-----------------|--------|
+Routing uses `final_complexity` (from Codebase Assessment), not `preliminary_complexity`.
+
+| type | final_complexity | slack available? | action |
+|------|-----------------|-----------------|--------|
 | bug | simple | yes or no | Draft PR (with code) |
 | bug | complex | yes | Slack ping |
 | bug | complex | no | GitHub Issue, label: `needs-human` |
@@ -351,13 +399,15 @@ Log routing decision before acting:
 
 ### Create Draft PR
 
-For `bug` or `feature_enhancement` with `complexity: simple`.
+For `bug` or `feature_enhancement` with `final_complexity: simple`.
 
-**Step 1 — Understand the codebase:**
-Use GitHub MCP to read the first repo in the routed team's `repos` list:
-- List top-level directory
-- Read README, package.json / requirements.txt / go.mod / Cargo.toml (whichever exists)
-- Identify 2–4 most likely files to change based on `routing_hint` + `description`; read them fully
+**Step 1 — Deepen codebase understanding:**
+The Codebase Assessment already read 2–3 files to classify complexity. Now read further to
+write the actual fix:
+- Read the specific files identified during assessment fully (if not already read in full)
+- Read any files they import that are directly relevant to the fix
+- Read README, package.json / requirements.txt / go.mod / Cargo.toml for stack context if not seen yet
+- Goal: understand enough to write a correct, minimal change with confidence
 
 **Step 2 — Write the minimal fix:**
 Reason step by step. What is the root cause given the client's description? What is the smallest correct change? Do not refactor, rename, or clean up adjacent code.
@@ -383,6 +433,10 @@ Reason step by step. What is the root cause given the client's description? What
 
     ## Urgency
     <urgency> — <rationale based on client tone>
+
+    ## Complexity Assessment
+    Classified as **simple** after reading the codebase.
+    <if complexity_note exists: show it here, e.g. "Previously assessed as complex from text; downgraded after reading VideoPlayer.tsx — fix is isolated to session cookie handling.">
 
     ---
     > Auto-generated by [CallPilot](https://github.com/Manpreet-2002/callpilot) from client call transcript.
@@ -523,17 +577,22 @@ In `confirm` mode, after extracting and routing all items from a meeting, show t
 │ Items found: <N>                                              │
 ├───────────────────────────────────────────────────────────────┤
 │                                                               │
-│  1. [🔴 BUG · SIMPLE → DRAFT PR] auth-service               │
+│  1. [🔴 BUG · simple→simple · DRAFT PR] auth-service         │
 │     "Fix random session expiry on Safari"                     │
 │     > "users are getting logged out randomly, especially      │
 │       on Safari. It happens maybe twice a week"               │
 │                                                               │
-│  2. [🟡 ENHANCEMENT · COMPLEX → SLACK #team-data] @raj       │
+│  2. [🔴 BUG · simple→COMPLEX ↑ · ISSUE #needs-human]        │
+│     "Fix crash when opening video directly"                   │
+│     ↑ Upgraded: VideoPlayer.tsx imports 4 services           │
+│     > "agar tu video open karega toh kya hi hoga"             │
+│                                                               │
+│  3. [🟡 ENHANCEMENT · COMPLEX → SLACK #team-data] @raj       │
 │     "Add CSV export to reports"                               │
 │     > "it would be nice if we could export our reports        │
 │       as CSV, not just PDF"                                   │
 │                                                               │
-│  3. [🟢 NEW FEATURE · COMPLEX → BACKLOG]                     │
+│  4. [🟢 NEW FEATURE · COMPLEX → BACKLOG]                     │
 │     "Mobile app for field team"                               │
 │     > "we'd love a mobile app at some point"                  │
 │                                                               │
