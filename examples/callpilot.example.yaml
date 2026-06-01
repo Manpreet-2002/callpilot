@@ -1,56 +1,68 @@
 # CallPilot Configuration
-# Copy this to callpilot.yaml in your project root and fill in your teams.
-# Run: cp examples/callpilot.example.yaml callpilot.yaml
+# ──────────────────────────────────────────────────────────────
+# First time? Run `/callpilot init` instead — it writes this
+# file for you interactively in about 2 minutes.
+# ──────────────────────────────────────────────────────────────
 
-# ─────────────────────────────────────────────────────────────
-# Transcript Source
-# ─────────────────────────────────────────────────────────────
-# Which meeting transcript tool you use.
-# Supported: fireflies | otter | zoom | manual
+# ── Transcript Source ─────────────────────────────────────────
+# Which meeting tool you use.
+# Options: fireflies | otter | zoom | manual
+#
+# "manual" = drop callpilot_transcript.txt in your project root.
+# Also works for: Slack threads, email chains, support tickets.
 
 transcript_source:
   type: fireflies
   api_key: ${FIREFLIES_API_KEY}
 
-  # For otter, use:
+  # Otter:
   # type: otter
   # client_id: ${OTTER_CLIENT_ID}
   # client_secret: ${OTTER_CLIENT_SECRET}
 
-  # For zoom, use:
+  # Zoom:
   # type: zoom
   # account_id: ${ZOOM_ACCOUNT_ID}
   # client_id: ${ZOOM_CLIENT_ID}
   # client_secret: ${ZOOM_CLIENT_SECRET}
 
-  # For manual (paste a transcript), use:
-  # type: manual
-  # (drop callpilot_transcript.txt in your project root before running)
+# ── Operating Mode ────────────────────────────────────────────
+# confirm: show preview + wait for approval before acting
+# auto:    execute immediately
+#
+# Omit this field to let CallPilot auto-promote from confirm → auto
+# after 5 successful confirmed runs. That's the recommended default.
+#
+# mode: confirm   # uncomment to always review
+# mode: auto      # uncomment to skip confirmation permanently
 
-# ─────────────────────────────────────────────────────────────
-# Teams
-# ─────────────────────────────────────────────────────────────
-# Define each engineering team. The `description` field is the
-# most important — the richer and more specific it is, the more
-# accurately CallPilot will route issues to the right team.
+# ── Teams ─────────────────────────────────────────────────────
+# Each team needs at minimum: name, description, repos.
+# slack_channel and oncall are optional — if omitted, CallPilot
+# routes complex items to GitHub Issues instead of Slack.
+#
+# IMPORTANT: Write rich descriptions. This is what CallPilot uses
+# to route issues. The more specific, the better the routing.
 
 teams:
   - name: auth
     description: >
       Authentication, login, logout, sessions, OAuth, passwords, tokens,
       user accounts, permissions, access control, signup, 2FA, SSO,
-      session expiry, cookie management, security, unauthorized errors
+      session expiry, cookie management, security, unauthorized errors,
+      JWT, refresh tokens, password reset, email verification
     repos:
       - your-org/auth-service
       - your-org/user-service
-    slack_channel: "#team-auth"
-    oncall: "@your-auth-lead"
+    slack_channel: "#team-auth"   # optional — remove if you don't use Slack
+    oncall: "@your-auth-lead"     # optional — used in Slack pings
 
   - name: data
     description: >
       Data pipelines, analytics, dashboards, charts, graphs, exports,
       CSV, PDF, Excel, reporting, data warehouse, ETL, metrics,
-      aggregations, slow queries, data accuracy, missing data
+      aggregations, slow queries, data accuracy, missing data,
+      wrong numbers, stale data, caching, database performance
     repos:
       - your-org/data-pipeline
       - your-org/analytics-service
@@ -61,7 +73,8 @@ teams:
     description: >
       UI, web app, design, forms, pages, navigation, layout, CSS,
       components, buttons, modals, mobile responsiveness, browser bugs,
-      Safari, Chrome, Firefox, loading states, visual glitches
+      Safari, Chrome, Firefox, loading states, visual glitches,
+      responsive design, accessibility, UX, user interface
     repos:
       - your-org/web-app
     slack_channel: "#team-frontend"
@@ -71,56 +84,55 @@ teams:
     description: >
       APIs, backend services, infrastructure, deployments, performance,
       latency, downtime, errors, 500s, integrations, webhooks,
-      third-party services, rate limiting, timeouts
+      third-party services, rate limiting, timeouts, reliability,
+      uptime, CI/CD, DevOps, cloud infrastructure, Kubernetes, Docker
     repos:
       - your-org/api-service
       - your-org/platform-infra
     slack_channel: "#team-platform"
     oncall: "@your-platform-lead"
 
-# ─────────────────────────────────────────────────────────────
-# Backlog
-# ─────────────────────────────────────────────────────────────
-# Where entirely new feature requests are filed as GitHub Issues.
+# ── Backlog ───────────────────────────────────────────────────
+# Where new feature requests go.
+# Options:
+#   type: github_issues — creates Issues in a GitHub repo (default)
+#   type: linear        — creates Issues in Linear (requires Linear MCP)
 
-backlog_repo: your-org/product-roadmap
+backlog:
+  type: github_issues
+  repo: your-org/product-roadmap
 
-# ─────────────────────────────────────────────────────────────
-# Fallback
-# ─────────────────────────────────────────────────────────────
-# What to do when CallPilot can't confidently route an item
-# to a specific team (confidence below routing.confidence_threshold).
+  # For Linear:
+  # type: linear
+  # linear_team_id: TEAM_ID   # find in Linear: Settings → Teams
+
+# ── Fallback ──────────────────────────────────────────────────
+# What happens when CallPilot can't confidently route an item.
+# Options: slack_channel | github_issue | ping_both
 
 fallback:
-  # Options:
-  #   slack_channel — post to a shared channel for humans to triage
-  #   github_issue  — open an issue in backlog_repo labeled callpilot-needs-triage
-  #   ping_both     — do both of the above
   strategy: slack_channel
-  slack_channel: "#engineering"
+  slack_channel: "#engineering"   # optional if Slack not connected
   mention: "@oncall-lead"
 
-# ─────────────────────────────────────────────────────────────
-# Routing
-# ─────────────────────────────────────────────────────────────
+# ── Routing ───────────────────────────────────────────────────
 
 routing:
-  # Confidence threshold (0.0 – 1.0).
-  # When CallPilot's confidence in routing to a specific team is below
-  # this value, it uses the fallback strategy instead.
-  # Lower = more aggressive routing (may route incorrectly).
-  # Higher = more items hit fallback (safer, more human review).
+  # Confidence threshold (0.0–1.0).
+  # Below this → fallback. Start at 0.75. Lower if too many items
+  # hit fallback; raise if items are being misrouted.
   confidence_threshold: 0.75
 
-# ─────────────────────────────────────────────────────────────
-# Pull Request Settings
-# ─────────────────────────────────────────────────────────────
+# ── Summary Channel ───────────────────────────────────────────
+# Optional: after every run, post a summary to this Slack channel.
+# Great for giving PMs and founders visibility without opening a terminal.
+# Remove this section if you don't want the summary post.
+
+summary:
+  slack_channel: "#callpilot"     # will be created if it doesn't exist
+
+# ── Pull Request Settings ─────────────────────────────────────
 
 pr:
-  # Always open as draft — strongly recommended.
-  # A human should review all AI-generated code changes before merging.
-  draft: true
-
-  # Label applied to all CallPilot-generated PRs and Issues.
-  # Create this label in your repos first: gh label create callpilot --color 0075ca
-  label: "callpilot"
+  draft: true           # always open as draft — human reviews AI code
+  label: "callpilot"    # create this first: gh label create callpilot --color 0075ca

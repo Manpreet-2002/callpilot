@@ -1,228 +1,305 @@
 # CallPilot
 
-Auto-process meeting transcripts and route bugs, feature enhancements, and new feature requests to the right team — opening draft PRs, pinging developers on Slack, or filing backlog issues.
+Your client calls write their own tickets.
 
-**Announce at start:** "Running CallPilot — processing recent meeting transcripts."
+After every meeting, CallPilot reads the transcript, extracts every bug report, feature request, and enhancement — then acts: opening draft PRs for simple bugs, pinging engineers for complex ones, filing everything else to your backlog. Zero servers. One YAML file. Works with whatever tools you already use.
+
+**Announce at start:** "Running CallPilot — processing recent transcripts."
+
+---
+
+## Invocation Modes
+
+| Command | What it does |
+|---------|-------------|
+| `/callpilot` | Normal run — process new transcripts |
+| `/callpilot init` | First-time guided setup (writes callpilot.yaml for you) |
+| `/callpilot --dry-run` | Preview what would happen — no actions taken |
+| `/callpilot --confirm` | Force confirmation mode for this run |
+
+---
+
+## Operating Mode
+
+CallPilot has two execution modes:
+
+**`confirm`** (default for runs 1–5): After extracting items, shows a full preview and waits for your approval before opening any PRs, sending any Slack messages, or filing any issues. Teaches you what it found and how it's routing before it acts. Builds trust before going autonomous.
+
+**`auto`** (default after 5 confirmed runs): Executes immediately. No confirmation needed.
+
+CallPilot automatically promotes itself from `confirm` → `auto` after 5 successful runs where you approved its output without corrections. You can override this at any time:
+- `mode: auto` in `callpilot.yaml` — skip confirm phase permanently
+- `mode: confirm` in `callpilot.yaml` — always confirm, never go auto
+- `/callpilot --confirm` — force confirm for a single run
+
+---
+
+## Slack is Optional
+
+CallPilot works without Slack. If Slack MCP is not connected, or if no `slack_channel` is set on a team, it routes all items to GitHub Issues instead with appropriate labels. Slack is an upgrade — not a requirement.
+
+| Connected | Behavior |
+|-----------|----------|
+| GitHub MCP only | Everything goes to GitHub Issues and PRs |
+| GitHub MCP + Slack MCP | Full routing: PRs + Slack pings + Issues |
+| Neither | Outputs a structured report to terminal only |
 
 ---
 
 ## Prerequisites
 
-Before running, verify these MCP tools are available in the session:
-- GitHub MCP (`mcp__github__*` tools) — for creating PRs and Issues
-- Slack MCP (`mcp__slack__*` or `mcp__claude_ai_Slack__*` tools) — for pinging teams
+Check what's available:
+- **GitHub MCP** (`mcp__github__*`) — for PRs, Issues, reading code
+- **Slack MCP** (`mcp__slack__*` or `mcp__claude_ai_Slack__*`) — optional, for team pings
+- **Linear MCP** (`mcp__linear__*`) — optional, if `backlog.type: linear`
 
-If either is missing, stop and output:
-```
-CallPilot requires GitHub and Slack MCP connections.
-Run /mcp to check connected servers, then reconnect and try again.
-```
+If GitHub MCP is missing: output the terminal report only, note what actions would have been taken, and suggest running `/mcp` to connect.
 
 ---
 
 ## Workflow
 
-Follow these steps exactly, in order, every time CallPilot is invoked:
+Follow these steps exactly, in order:
 
-1. **Check prerequisites** — verify GitHub MCP and Slack MCP tools are available
-2. **Read config** — read `callpilot.yaml` from CWD using the Read tool; if it doesn't exist, stop with: "No callpilot.yaml found. Copy examples/callpilot.example.yaml and configure your teams."
-3. **Read/initialize state** — read `callpilot.state.json` or initialize it (see State Management)
-4. **Fetch transcripts** — use the adapter matching `transcript_source.type` (see Transcript Adapters); filter out meeting IDs already in `processed_meeting_ids`
-5. **Report discovery** — output: "Found <N> new meeting(s) to process."
-6. **For each new meeting:**
-   a. Run extraction (see Extraction and Classification) — get list of items
-   b. For each item: route it (see Routing), then execute the appropriate action (see Actions)
-   c. Add the meeting ID to `processed_meeting_ids`
-7. **Update state** — write updated `callpilot.state.json`
-8. **Print run summary** — see Run Summary
+1. **Detect invocation mode** — check if called with `init`, `--dry-run`, or `--confirm` (see respective sections)
+2. **Read config** — read `callpilot.yaml` from CWD; if missing and this is not an `init` run, output: "No callpilot.yaml found. Run `/callpilot init` to set up in 2 minutes."
+3. **Read/initialize state** — read `callpilot.state.json` or initialize it
+4. **Check available MCP tools** — determine which actions are available based on what's connected
+5. **Fetch transcripts** — use adapter for `transcript_source.type`; filter already-processed meetings
+6. **Report discovery** — "Found <N> new meeting(s) to process."
+7. **For each new meeting:**
+   - Run extraction to get items list
+   - Route each item to a team
+   - If in `confirm` mode: show full preview and wait for approval (see Confirmation Mode)
+   - If `--dry-run`: show what would happen, stop
+   - Otherwise: execute each action
+   - Add meeting ID to `processed_meeting_ids`
+8. **Update state**
+9. **Post run summary** (see Run Summary section)
+
+---
+
+## Init Mode
+
+When invoked as `/callpilot init`:
+
+Walk the user through setup interactively. One question at a time.
+
+```
+Welcome to CallPilot setup. I'll ask a few questions and write your config file.
+This takes about 2 minutes.
+```
+
+**Questions to ask (in order):**
+
+1. "What meeting tool do you use? (fireflies / otter / zoom / other)"
+   - If other: "For now, use `type: manual` — drop a callpilot_transcript.txt file to process any transcript."
+
+2. "How many engineering teams should CallPilot route to? (just say a number)"
+
+3. For each team (ask in sequence):
+   - "Team <N> name? (e.g. backend, frontend, data)"
+   - "What does this team own? Give me 5-10 keywords (e.g. 'auth login sessions OAuth passwords')"
+   - "GitHub repos for this team? (e.g. your-org/api-service — press enter to add more, empty to move on)"
+   - "Slack channel for this team? (e.g. #team-backend — or press enter to skip)"
+
+4. "Where should new feature requests go?
+   a) GitHub Issues (in which repo?)
+   b) Linear (I'll need your Linear team ID)"
+
+5. "One Slack channel for CallPilot summaries after each run? (or press enter to skip)"
+
+After collecting answers: write `callpilot.yaml` to CWD and show it to the user.
+
+```
+✅ callpilot.yaml written. Here's what I configured:
+
+[show the generated YAML]
+
+Ready to run? I'll check your MCP connections and process your most recent meeting.
+Proceed? (yes / no)
+```
+
+If yes: run the normal workflow immediately in `--dry-run` mode to show what it found, then ask if they want to execute for real.
 
 ---
 
 ## State Management
 
-State is stored in `callpilot.state.json` in the current working directory.
+State is stored in `callpilot.state.json` in CWD.
 
-**On startup — read or initialize state:**
-
-1. Check if `callpilot.state.json` exists in CWD
-2. If it exists, read it. Expected shape:
-   ```json
-   {
-     "last_run": "2026-06-02T14:30:00Z",
-     "processed_meeting_ids": ["meet_abc123", "meet_def456"]
-   }
-   ```
-3. If it does not exist, initialize with:
-   ```json
-   {
-     "last_run": "1970-01-01T00:00:00Z",
-     "processed_meeting_ids": []
-   }
-   ```
-
-**On completion — update state:**
-
-After processing all meetings in a run, write updated state:
+**Schema:**
 ```json
 {
-  "last_run": "<ISO8601 timestamp of this run's start>",
-  "processed_meeting_ids": ["<all previously processed IDs plus newly processed ones>"]
+  "last_run": "2026-06-02T14:30:00Z",
+  "processed_meeting_ids": ["meet_abc123"],
+  "run_count": 3,
+  "confirmed_runs": 3,
+  "mode": "confirm"
 }
 ```
 
-Keep `processed_meeting_ids` to a maximum of 500 entries. If it grows beyond 500, drop the oldest entries (keep the 500 most recent).
+**Fields:**
+- `last_run`: ISO8601 timestamp of last run
+- `processed_meeting_ids`: meeting IDs already processed (max 500, drop oldest)
+- `run_count`: total number of runs ever executed
+- `confirmed_runs`: runs where user reviewed and approved output without corrections
+- `mode`: current operating mode (`confirm` or `auto`)
+
+**Mode promotion logic:**
+- If `confirmed_runs >= 5` AND config does not have explicit `mode:` set: set `mode: auto` in state
+- If config has explicit `mode:` set: always use config value, ignore state
+
+**On initialization (no state file):**
+```json
+{
+  "last_run": "1970-01-01T00:00:00Z",
+  "processed_meeting_ids": [],
+  "run_count": 0,
+  "confirmed_runs": 0,
+  "mode": "confirm"
+}
+```
 
 ---
 
 ## Transcript Adapters
 
-### Fireflies Adapter
+### Fireflies
 
 When `transcript_source.type: fireflies`:
 
-**Endpoint:** `POST https://api.fireflies.ai/graphql`
-**Auth:** Bearer token using the value of `transcript_source.api_key` (expand env var if prefixed with `${`)
-
-**Fetch transcripts since `last_run` (run via Bash tool):**
 ```bash
 curl -s -X POST https://api.fireflies.ai/graphql \
   -H "Authorization: Bearer $FIREFLIES_API_KEY" \
   -H "Content-Type: application/json" \
-  -d '{
-    "query": "query { transcripts(fromDate: \"<last_run>\") { id title date duration participants { displayName email } summary { overview action_items } sentences { index speaker_name text start_time } transcript_url } }"
-  }'
+  -d '{"query":"query{transcripts(fromDate:\"<last_run>\"){id title date duration participants{displayName email}summary{overview}sentences{index speaker_name text start_time}transcript_url}}"}'
 ```
 
-Replace `<last_run>` with the ISO8601 value from state.
+Response path: `data.transcripts`. Filter by `id` not in `processed_meeting_ids`.
 
-**Response path:** `data.transcripts` — array of meeting objects.
-
-**Filter:** Remove any meeting whose `id` is already in `processed_meeting_ids`.
-
-**Assemble transcript text** from `sentences` array:
-```
-<speaker_name>: <text>
-<speaker_name>: <text>
-...
-```
+Assemble text: `<speaker_name>: <text>\n` for each sentence in order.
 
 ---
 
-### Otter Adapter
+### Otter
 
 When `transcript_source.type: otter`:
 
-**Step 1 — Get access token:**
+**Get token:**
 ```bash
 curl -s -X POST https://otter.ai/api/v1/auth/token \
   -H "Content-Type: application/json" \
   -d "{\"client_id\":\"$OTTER_CLIENT_ID\",\"client_secret\":\"$OTTER_CLIENT_SECRET\",\"grant_type\":\"client_credentials\"}"
 ```
-Extract `access_token` from response.
 
-**Step 2 — List speeches since last_run (convert ISO8601 to Unix timestamp):**
+**List speeches since last_run (convert ISO8601 to Unix timestamp):**
 ```bash
-curl -s "https://otter.ai/api/v1/speeches?created_after=<unix_timestamp>" \
-  -H "Authorization: Bearer <access_token>"
+curl -s "https://otter.ai/api/v1/speeches?created_after=<unix_ts>" \
+  -H "Authorization: Bearer <token>"
 ```
 
-Response includes speeches with `id`, `title`, `created_at`, and `transcripts` array (each: `speaker`, `text`, `start_offset`).
-
-**Filter:** Remove any speech whose `id` is already in `processed_meeting_ids`.
-
-**Assemble transcript text** from `transcripts` array, sorted by `start_offset`:
-```
-<speaker>: <text>
-```
+Assemble from `transcripts` array sorted by `start_offset`: `<speaker>: <text>\n`.
 
 ---
 
-### Zoom Adapter
+### Zoom
 
 When `transcript_source.type: zoom`:
 
-**Step 1 — Get access token (Server-to-Server OAuth):**
+**Get token:**
 ```bash
 curl -s -X POST "https://zoom.us/oauth/token?grant_type=account_credentials&account_id=$ZOOM_ACCOUNT_ID" \
   -H "Authorization: Basic $(echo -n "$ZOOM_CLIENT_ID:$ZOOM_CLIENT_SECRET" | base64)"
 ```
-Extract `access_token` from response.
 
-**Step 2 — List cloud recordings from last_run date to today:**
+**List recordings:**
 ```bash
 curl -s "https://api.zoom.us/v2/accounts/me/recordings?from=<YYYY-MM-DD>&to=<YYYY-MM-DD>" \
-  -H "Authorization: Bearer <access_token>"
+  -H "Authorization: Bearer <token>"
 ```
 
-**Step 3 — For each meeting that has a transcript file (type: `audio_transcript`), fetch it:**
-```bash
-curl -s "<transcript_download_url>?access_token=<access_token>"
-```
-The response is in VTT format. Parse it: each cue block contains `<timestamp>` then `<Speaker Name>: <text>`.
-
-**Filter:** Remove any meeting whose `uuid` is already in `processed_meeting_ids`.
+For each meeting with `type: audio_transcript` file: fetch the VTT URL and parse `Speaker: text` from each cue block.
 
 ---
 
-### Manual Adapter
+### Manual / Paste Mode
 
 When `transcript_source.type: manual`:
 
-1. Read `callpilot_transcript.txt` from CWD
-2. If it doesn't exist, output: "No callpilot_transcript.txt found. Create this file with your meeting transcript and run CallPilot again." and stop.
-3. Generate a synthetic meeting ID: `manual_<first 16 chars of sha256 of file content>`
-   ```bash
-   echo -n "$(head -c 200 callpilot_transcript.txt)" | sha256sum | cut -c1-16
-   ```
-4. Use the file contents directly as the transcript text. Speaker lines are detected by the pattern `Name: text` at the start of a line.
-5. Use filename (without extension) as the meeting title, and current timestamp as the date.
+Read `callpilot_transcript.txt` from CWD. If missing, output:
+```
+No transcript found. Drop your transcript into callpilot_transcript.txt and run again.
+
+Supported formats:
+  Speaker Name: text they said
+  [Speaker Name]: text they said
+  Or plain paragraphs (speaker detection will be attempted)
+```
+
+This mode also accepts pasted content from:
+- **Slack threads**: paste the full thread including timestamps and names
+- **Email chains**: paste the full email chain, names and content
+- **Support tickets**: paste the ticket body and any customer replies
+- **Any text**: classification works on any customer/stakeholder feedback
+
+For all paste inputs, generate a synthetic meeting ID from content hash:
+```bash
+echo -n "$(head -c 200 callpilot_transcript.txt)" | sha256sum | cut -c1-16
+```
+
+Use the first line of the file as the meeting title if it looks like a title, otherwise use `Manual Input <date>`.
 
 ---
 
 ## Extraction and Classification
 
-For each new meeting, assemble the full transcript text from the sentences/cues array, then internally reason through the following prompt:
+For each meeting, assemble the full transcript text and internally reason through this prompt:
 
 ---
 
-**EXTRACTION PROMPT — reason through this for each meeting:**
+**EXTRACTION PROMPT:**
 
 ```
-You are analyzing a meeting transcript between a startup team member and a client or stakeholder.
+You are analyzing a communication between a startup team member and a client, customer, or stakeholder.
+The communication may be a meeting transcript, a Slack thread, an email chain, or a support ticket.
 
 Your job:
-1. Extract every distinct item the client or stakeholder mentioned that implies work needs to be done.
-   Ignore: social pleasantries, praise, scheduling discussion, vague wishes with no specificity.
-   Include: bug reports, complaints about existing functionality, requests for changes, requests for new things.
+1. Extract every distinct item that implies engineering work needs to be done.
+   IGNORE: pleasantries, praise, scheduling, vague wishes without specificity ("it'd be cool if someday...")
+   INCLUDE: specific bugs, broken workflows, frustrating limitations, concrete feature asks, data issues, performance complaints
 
-2. For each extracted item, determine:
-   - type: exactly one of [bug, feature_enhancement, new_feature]
-   - complexity: exactly one of [simple, complex]
-   - title: a concise 5–10 word summary (imperative, e.g. "Fix session expiry on Safari")
-   - description: 2–3 sentences explaining what the client wants and why it matters to them
-   - client_quote: the verbatim sentence(s) from the transcript that best captures this item
-   - speaker: the name of the person who raised it
-   - routing_hint: 8–12 key domain words that will help match this item to an engineering team
+2. For each item, output:
+   - type: [bug | feature_enhancement | new_feature]
+   - complexity: [simple | complex]
+   - title: 5–10 words, imperative tense ("Fix session expiry on Safari", not "Session expiry issue")
+   - description: 2–3 sentences — what the problem is, why it matters to the client
+   - client_quote: verbatim sentence(s) that best capture the item
+   - speaker: who raised it (name or role)
+   - routing_hint: 8–12 domain keywords for team matching
+   - urgency: [low | medium | high] — based on tone, frequency of mention, and business impact implied
 
 Classification rules:
-  bug              → something is broken, failing, producing errors, or crashing
-  feature_enhancement → an existing feature that needs to be extended, improved, or made more flexible
-  new_feature      → something that doesn't exist yet and would require building from scratch
+  bug              → broken, not working, crashing, showing wrong data, slow to the point of unusable
+  feature_enhancement → existing feature needs extension, more flexibility, or improved UX
+  new_feature      → does not exist yet, would need to be built from scratch
 
 Complexity rules:
-  simple → self-contained change affecting 1–3 files, clearly scoped, no cross-service coordination needed
-  complex → touches multiple services, requires design decisions, has ambiguous scope, or needs clarification before work can begin
+  simple  → clearly scoped, 1–3 files, no cross-service coordination, could ship in a day
+  complex → ambiguous scope, multiple services, design decisions required, or needs clarification first
 
-Return ONLY a valid JSON array. No prose, no markdown fences. Example:
+Return ONLY valid JSON. No prose, no markdown fences.
+
 [
   {
     "type": "bug",
     "complexity": "simple",
+    "urgency": "high",
     "title": "Fix random session expiry on Safari",
-    "description": "Users are being unexpectedly logged out on Safari browser approximately twice per week. The issue appears session or cookie-related and is specific to Safari.",
-    "client_quote": "users are getting logged out randomly, especially on Safari. It happens maybe twice a week.",
+    "description": "Users are being logged out unexpectedly on Safari approximately twice per week mid-session. The pattern suggests a cookie or session token issue specific to Safari's storage behavior.",
+    "client_quote": "users are getting logged out randomly, especially on Safari. It happens maybe twice a week",
     "speaker": "Alice Chen",
-    "routing_hint": "login logout sessions Safari authentication cookie session expiry"
+    "routing_hint": "login logout sessions Safari authentication cookie session expiry token"
   }
 ]
 ```
@@ -230,220 +307,317 @@ Return ONLY a valid JSON array. No prose, no markdown fences. Example:
 ---
 
 **After extraction:**
-- If the array is empty: log `No actionable items found in: <meeting title>` and move to the next meeting.
-- If extraction returns invalid JSON: log `Extraction parse error for: <meeting title> — skipping` and do NOT add the meeting ID to `processed_meeting_ids` (it will be retried next run).
+- Empty array: log `No actionable items found in: <title>` and skip
+- Invalid JSON: log parse error, do NOT mark as processed (retry next run)
+- Sort items by urgency: high → medium → low before routing
 
 ---
 
 ## Routing
 
-For each extracted item, route it to a team using this algorithm:
+For each item:
 
-1. Load all team `name` + `description` pairs from `callpilot.yaml`
-2. Assess which team's description best matches the item's `routing_hint` + `description` using semantic reasoning
-3. Assign a confidence score from 0.0 to 1.0
-4. If the top score ≥ `routing.confidence_threshold` (default: 0.75): route to that team
-5. If the top score < `routing.confidence_threshold`: use the fallback strategy (see Actions → Fallback)
+1. Load team `name` + `description` pairs from config
+2. Semantically match item's `routing_hint` + `description` against each team's description
+3. Assign confidence score 0.0–1.0 to each team
+4. If top score ≥ `routing.confidence_threshold`: route to that team
+5. If top score < threshold: use fallback strategy
 
-Output your routing decision before executing the action:
+Log routing decision before acting:
 ```
-→ Routing "<title>" to team: <name> (confidence: <score>)
+→ "Fix session expiry on Safari" → auth (confidence: 0.91) [HIGH urgency]
+→ "Export reports as CSV" → data (confidence: 0.84) [MEDIUM urgency]
+→ "Mobile app for field team" → new_feature → backlog (confidence: 0.79)
 ```
-or
-```
-→ Routing "<title>" to fallback (confidence below threshold: <score>)
-```
+
+---
+
+## Action Matrix
+
+| type | complexity | slack available? | action |
+|------|------------|-----------------|--------|
+| bug | simple | yes or no | Draft PR (with code) |
+| bug | complex | yes | Slack ping |
+| bug | complex | no | GitHub Issue, label: `needs-human` |
+| feature_enhancement | simple | yes or no | Draft PR (with code) |
+| feature_enhancement | complex | yes | Slack ping |
+| feature_enhancement | complex | no | GitHub Issue, label: `needs-human` |
+| new_feature | any | yes or no | Backlog (GitHub Issue or Linear) |
+| routing confidence < threshold | any | any | Fallback |
 
 ---
 
 ## Actions
 
-Use this matrix to decide which action to take:
-
-| type                 | complexity | action                    |
-|----------------------|------------|---------------------------|
-| `bug`                | `simple`   | Create Draft PR           |
-| `bug`                | `complex`  | Slack Ping                |
-| `feature_enhancement`| `simple`   | Create Draft PR           |
-| `feature_enhancement`| `complex`  | Slack Ping                |
-| `new_feature`        | `simple`   | Backlog Issue             |
-| `new_feature`        | `complex`  | Backlog Issue             |
-| any (low confidence) | any        | Fallback                  |
-
----
-
-### Action: Create Draft PR
+### Create Draft PR
 
 For `bug` or `feature_enhancement` with `complexity: simple`.
 
 **Step 1 — Understand the codebase:**
 Use GitHub MCP to read the first repo in the routed team's `repos` list:
-- List the top-level directory
-- Read `README.md` (if present) for stack overview
-- Read `package.json`, `requirements.txt`, `go.mod`, `Cargo.toml`, or `pyproject.toml` (whichever exists) to understand dependencies
-- Use the item's `routing_hint` and `description` to identify the 2–4 most likely files to change; read those files in full
+- List top-level directory
+- Read README, package.json / requirements.txt / go.mod / Cargo.toml (whichever exists)
+- Identify 2–4 most likely files to change based on `routing_hint` + `description`; read them fully
 
-**Step 2 — Reason about the fix:**
-Given the client quote, description, and code you've read — determine the minimal correct change. Think step by step. Prefer the smallest change that addresses the root cause. Do not refactor beyond what's needed.
+**Step 2 — Write the minimal fix:**
+Reason step by step. What is the root cause given the client's description? What is the smallest correct change? Do not refactor, rename, or clean up adjacent code.
 
-**Step 3 — Create the branch and PR using GitHub MCP:**
-- Branch name: `callpilot/<meeting-id-first-8-chars>-<kebab-case-title-max-40-chars>`
-  Example: `callpilot/abc123-fix-session-expiry-safari`
-- Apply the file changes on that branch
-- Create a pull request with:
+**Step 3 — Create branch and PR via GitHub MCP:**
+- Branch: `callpilot/<meeting-id-8chars>-<kebab-title-40chars>`
+- Apply changes on that branch
+- PR:
   - **title:** `[CallPilot] <item title>`
-  - **draft:** `true` (always — human reviews AI code before merging)
-  - **labels:** value of `pr.label` from config (default: `callpilot`)
+  - **draft:** true (always)
+  - **labels:** `pr.label` from config (default: `callpilot`)
   - **body:**
     ```
-    ## Summary
-    <item description>
+    ## What & Why
+    <description>
 
-    ## Client Feedback
+    ## Client Said
     > "<client_quote>"
-    — <speaker>, <meeting title> (<meeting date>)
+    — <speaker> · <meeting title> · <meeting date>
 
-    ## What Changed
-    - <bullet: file changed and what was done>
-    - <bullet: file changed and what was done>
+    ## Changes
+    - <file: what changed and why>
 
-    ## Review Notes
-    This PR was auto-generated by CallPilot from a client call transcript.
-    Please review carefully before merging.
+    ## Urgency
+    <urgency> — <rationale based on client tone>
 
     ---
-    Meeting: <transcript_url>
-    Generated: <ISO8601 timestamp>
+    > Auto-generated by [CallPilot](https://github.com/Manpreet-2002/callpilot) from client call transcript.
+    > Review carefully before merging.
+    > Meeting: <transcript_url>
     ```
 
-Output: `✅ Draft PR opened: <pr_url>`
+Output: `✅ Draft PR: <pr_url>`
 
 ---
 
-### Action: Slack Ping
+### Slack Ping
 
-For `bug` or `feature_enhancement` with `complexity: complex`.
+For `bug` or `feature_enhancement` with `complexity: complex` AND Slack MCP connected.
 
-Use Slack MCP to send a message to the routed team's `slack_channel`:
+Send to team's `slack_channel`:
 
 ```
-:rotating_light: *CallPilot — Action Required*
+:rotating_light: *CallPilot — <urgency_emoji> <urgency> priority*
 
 *<item title>*
-Type: <type> | Complexity: complex | From: <meeting title> (<meeting date>)
+From: <meeting title> · <date>
 
 *Client said:*
 > "<client_quote>"
 — <speaker>
 
-*Why this needs your attention:*
-<item description>
+*Why this matters:*
+<description>
 
-This item is too complex for auto-implementation and needs human scoping before work can begin.
+This is too complex for auto-implementation — needs scoping before work starts.
+Transcript: <transcript_url>
 
-Meeting transcript: <transcript_url>
-
-<oncall> please triage within 24h.
+<oncall> please triage within <urgency == high ? "4h" : "24h">.
 ```
 
-Output: `💬 Slack ping sent to <slack_channel> (<oncall>)`
+Where `urgency_emoji`: high = 🔴, medium = 🟡, low = 🟢
+
+Output: `💬 Slack ping → <slack_channel> (<oncall>) [<urgency>]`
 
 ---
 
-### Action: Backlog Issue
+### GitHub Issue — Needs Human
 
-For `new_feature` at any complexity.
+For `complexity: complex` when Slack MCP is NOT connected.
 
-Use GitHub MCP to create an issue in `backlog_repo`:
+Create issue in the team's first repo (NOT backlog_repo — this is a known issue, just complex):
+- **title:** `[CallPilot] <item title>`
+- **labels:** `callpilot`, `needs-human`, `<type>`
+- **body:** same content as the Slack ping message above, formatted as Markdown
 
+Output: `📌 Issue (needs-human) → <issue_url>`
+
+---
+
+### Backlog — GitHub Issues
+
+When `backlog.type: github_issues` (default):
+
+Create issue in `backlog.repo`:
 - **title:** `[CallPilot] <item title>`
 - **labels:** `callpilot`, `feature-request`
 - **body:**
   ```
   ## Feature Request
 
-  **Requested by:** <speaker> in *<meeting title>* (<meeting date>)
+  **Client:** <speaker> · <meeting title> · <date>
 
-  **What they asked for:**
   > "<client_quote>"
 
-  **Description:**
-  <item description>
+  **Context:**
+  <description>
+
+  **Routing hint:** `<routing_hint>`
 
   ---
-  Meeting transcript: <transcript_url>
-  Generated by CallPilot on <ISO8601 timestamp>
+  > Auto-filed by [CallPilot](https://github.com/Manpreet-2002/callpilot)
+  > Meeting: <transcript_url>
   ```
 
-Output: `📋 Backlog issue created: <issue_url>`
+Output: `📋 Backlog issue → <issue_url>`
 
 ---
 
-### Action: Fallback
+### Backlog — Linear
 
-When routing confidence is below `routing.confidence_threshold`.
+When `backlog.type: linear`:
 
-Apply `fallback.strategy` from config:
+Use Linear MCP to create an issue in the configured team:
+- **title:** `[CallPilot] <item title>`
+- **team:** `backlog.linear_team_id`
+- **priority:** map urgency → Linear priority (high=1, medium=2, low=3)
+- **description:** same body as GitHub Issues version above
 
-**`slack_channel`** — send to `fallback.slack_channel`:
+If Linear MCP is not connected: fall back to GitHub Issues and log the fallback.
+
+Output: `📋 Linear issue → <linear_url>`
+
+---
+
+### Fallback
+
+When routing confidence < `routing.confidence_threshold`:
+
+**`slack_channel`:** Post to `fallback.slack_channel`:
 ```
 :callpilot: *CallPilot — Needs Triage*
 
-Could not confidently route the following item from *<meeting title>*:
+Could not confidently route this item from *<meeting title>*:
 
-*<item title>*
-Type: <type> | Complexity: <complexity>
+*<item title>* (confidence: <score>, threshold: <threshold>)
+Type: <type> | Complexity: <complexity> | Urgency: <urgency>
 
-*Client said:*
 > "<client_quote>"
 — <speaker>
 
-Routing was ambiguous (confidence: <score>, threshold: <threshold>).
-Routing hint used: `<routing_hint>`
+Domain keywords tried: `<routing_hint>`
 
-Please assign to the right team.
+<fallback.mention> — please assign to the right team.
 Meeting: <transcript_url>
-
-<fallback.mention>
 ```
 
-**`github_issue`** — create an issue in `backlog_repo` with:
-- title: `[CallPilot] NEEDS TRIAGE: <item title>`
-- labels: `callpilot`, `callpilot-needs-triage`
-- body: same context as the Slack message above
+**`github_issue`:** Create issue in `backlog.repo` with labels `callpilot`, `needs-triage`.
 
-**`ping_both`** — do both of the above.
+**`ping_both`:** Both of the above.
 
-Output: `⚠️  Fallback triggered for "<title>" — <action taken>`
+Output: `⚠️  Fallback → <action> for "<title>"`
+
+---
+
+## Confirmation Mode
+
+In `confirm` mode, after extracting and routing all items from a meeting, show this preview before executing anything:
+
+```
+┌─ CallPilot Preview ──────────────────────────────────────────┐
+│ Meeting: <title> (<date>)                                     │
+│ Items found: <N>                                              │
+├───────────────────────────────────────────────────────────────┤
+│                                                               │
+│  1. [🔴 BUG · SIMPLE → DRAFT PR] auth-service               │
+│     "Fix random session expiry on Safari"                     │
+│     > "users are getting logged out randomly, especially      │
+│       on Safari. It happens maybe twice a week"               │
+│                                                               │
+│  2. [🟡 ENHANCEMENT · COMPLEX → SLACK #team-data] @raj       │
+│     "Add CSV export to reports"                               │
+│     > "it would be nice if we could export our reports        │
+│       as CSV, not just PDF"                                   │
+│                                                               │
+│  3. [🟢 NEW FEATURE · COMPLEX → BACKLOG]                     │
+│     "Mobile app for field team"                               │
+│     > "we'd love a mobile app at some point"                  │
+│                                                               │
+├───────────────────────────────────────────────────────────────┤
+│ Proceed? (yes = execute all · no = skip · edit = modify)      │
+└───────────────────────────────────────────────────────────────┘
+```
+
+**Responses:**
+- `yes` / `y` / `✅` / no response after 60s: execute all items, increment `confirmed_runs`
+- `no` / `n` / `skip`: skip this meeting, do NOT add to `processed_meeting_ids` (retry next run)
+- `edit <N> <new instruction>`: modify item N's routing or action before executing
+
+After 5 confirmed runs (state `confirmed_runs >= 5`): promote to `auto` mode and notify:
+```
+✨ CallPilot has completed 5 confirmed runs without corrections.
+   Switching to auto mode — future runs will execute without confirmation.
+   Override with `mode: confirm` in callpilot.yaml to keep reviewing.
+```
 
 ---
 
 ## Run Summary
 
-After processing all meetings, output this summary:
+After all meetings are processed, output:
 
 ```
-── CallPilot Run Complete ────────────────────────────────────
-Meetings processed: <N>
-Items extracted:    <total>
+┌─ CallPilot ─────────────────────────────────────────────────────────────────┐
+│  📞 <N> meeting(s) · <total> item(s) extracted                              │
+├──────────────────────────────────────────────────────────────────────────────┤
+│  ✅  Draft PRs       <count>                                                 │
+│  💬  Slack pings     <count>                                                 │
+│  📋  Backlog items   <count>                                                 │
+│  📌  Needs human     <count>                                                 │
+│  ⚠️   Fallback        <count>                                                │
+├──────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  ✅  "Fix session expiry on Safari"                                          │
+│      → PR #47  github.com/org/auth-service/pull/47  [🔴 HIGH]               │
+│                                                                              │
+│  💬  "Add CSV export to reports"                                             │
+│      → Slack  #team-data  @raj  [🟡 MEDIUM]                                 │
+│                                                                              │
+│  📋  "Mobile app for field team"                                             │
+│      → Issue #23  github.com/org/product-roadmap/issues/23  [🟢 LOW]        │
+│                                                                              │
+└──────────────────────────────────────────────────────────────────────────────┘
+```
 
-  Draft PRs opened:  <count>
-  Slack pings sent:  <count>
-  Backlog issues:    <count>
-  Fallback routed:   <count>
+**If `summary_channel` is configured:** Post this same summary (formatted for Slack) to that channel after each run. This gives PMs and founders visibility into what was actioned from their calls without opening a terminal.
 
-Details:
-<for each item, one line with icon + title + what was done + link>
-  ✅  "Fix session expiry on Safari"     → PR #42   github.com/org/auth-service/pull/42
-  💬  "Add date range filter to search"  → Slack    #team-data (@raj)
-  📋  "Mobile app for field team"        → Issue #7  github.com/org/product-roadmap/issues/7
+**Slack-formatted summary for `summary_channel`:**
+
+```
+:callpilot: *CallPilot — Run Complete*
+📞 *<meeting title>* · <date>
+
+Found *<N> item(s)*:
+<for each item: emoji + title + action + link>
+  ✅ "Fix session expiry on Safari" → <pr_url>
+  💬 "Add CSV export to reports" → pinged @raj in #team-data
+  📋 "Mobile app for field team" → <issue_url>
+
+_<N> items from 1 call. 0 minutes of manual triage._
+```
+
+**If zero meetings found:**
+```
+── CallPilot ──────────────────────────────────────────────────
+No new meetings since <last_run>.
 ─────────────────────────────────────────────────────────────
 ```
 
-If zero meetings were found:
+---
+
+## Dry Run Mode
+
+When invoked with `--dry-run`:
+
+Run the full workflow — fetch transcripts, extract items, route — but do NOT execute any action. Instead, show the Confirmation Mode preview for each meeting and append:
+
 ```
-── CallPilot ─────────────────────────────────────────────────
-No new meetings found since <last_run>.
-Next run will check for meetings after <current_timestamp>.
-─────────────────────────────────────────────────────────────
+[DRY RUN — no actions taken]
+To execute for real, run: /callpilot
 ```
+
+Dry run does NOT increment `run_count` or `confirmed_runs`. It does NOT update `processed_meeting_ids` or `last_run`.
