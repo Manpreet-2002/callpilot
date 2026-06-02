@@ -56,7 +56,7 @@ Safari's storage behavior.
 
 ```bash
 # 1. Install the skill
-curl -o ~/.claude/skills/callpilot.md \
+mkdir -p ~/.claude/skills/callpilot && curl -o ~/.claude/skills/callpilot/SKILL.md \
   https://raw.githubusercontent.com/Manpreet-2002/callpilot/main/skill/callpilot.md
 
 # 2. Set your transcript API key
